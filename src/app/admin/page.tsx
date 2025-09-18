@@ -1,5 +1,5 @@
 import { getServerSession } from "next-auth";
-import { authOptions } from "../../lib/auth"; // relative import avoids alias issues
+import { authOptions } from "@/lib/auth"; // relative import avoids alias issues
 import { redirect } from "next/navigation";
 
 export default async function AdminPage() {

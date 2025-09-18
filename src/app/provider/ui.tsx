@@ -5,27 +5,45 @@ export default function ProviderUI({ email }: { email: string }) {
   const [list, setList] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formKey, setFormKey] = useState(0);  // remount form to clear it
 
   async function refresh() {
-    const r = await fetch("/api/appointments", { cache:"no-store" });
+    const r = await fetch("/api/appointments", { cache: "no-store" });
     setList(await r.json());
   }
   useEffect(() => { refresh(); }, []);
 
   async function onCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault(); setErr(null); setSaving(true);
+    e.preventDefault();
+    setErr(null);
+    setSaving(true);
+
+    // Read values BEFORE any await
     const fd = new FormData(e.currentTarget);
     const payload = {
-      patientEmail: String(fd.get("patientEmail")||""),
-      startsAt: String(fd.get("startsAt")||""),
-      endsAt: String(fd.get("endsAt")||""),
-      notes: String(fd.get("notes")||""),
+      patientEmail: String(fd.get("patientEmail") || ""),
+      startsAt:     String(fd.get("startsAt")     || ""),
+      endsAt:       String(fd.get("endsAt")       || ""),
+      notes:        String(fd.get("notes")        || ""),
     };
-    const r = await fetch("/api/appointments", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
-    if (!r.ok) { const j = await r.json().catch(()=>({})); setErr(j?.error || "Failed"); setSaving(false); return; }
-    (e.currentTarget as HTMLFormElement).reset();
-    setSaving(false);
-    refresh();
+
+    try {
+      const r = await fetch("/api/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setErr(j?.error || "Failed to save"); return; }
+
+      // Clear form by remounting it (avoids .reset() + pooled events)
+      setFormKey(k => k + 1);
+      await refresh();
+    } catch (e: any) {
+      setErr(e?.message || "Network error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -37,13 +55,18 @@ export default function ProviderUI({ email }: { email: string }) {
 
       <section className="max-w-xl space-y-3">
         <h2 className="text-lg font-medium">Create Appointment</h2>
+        <p className="text-sm text-gray-500">
+          Tip: use the date pickers. If typing, use <code>YYYY-MM-DDTHH:mm</code> or <code>DD/MM/YYYY, HH:mm</code>.
+        </p>
         {err && <p className="text-red-600">{err}</p>}
-        <form onSubmit={onCreate} className="space-y-2">
+        <form key={formKey} onSubmit={onCreate} className="space-y-2">
           <input name="patientEmail" type="email" placeholder="patient@example.com" required className="border p-2 w-full"/>
           <input name="startsAt" type="datetime-local" required className="border p-2 w-full"/>
           <input name="endsAt" type="datetime-local" required className="border p-2 w-full"/>
           <textarea name="notes" placeholder="Notes (optional)" className="border p-2 w-full"/>
-          <button className="border px-4 py-2 rounded" disabled={saving} type="submit">{saving ? "Saving..." : "Save"}</button>
+          <button className="border px-4 py-2 rounded" disabled={saving} type="submit">
+            {saving ? "Saving..." : "Save"}
+          </button>
         </form>
       </section>
 

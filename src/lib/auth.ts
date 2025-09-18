@@ -1,8 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-
-const A = (process.env.ADMIN_EMAILS || "").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
-const P = (process.env.PROVIDER_EMAILS || "").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
+import { prisma } from "@/lib/db";
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -14,20 +12,30 @@ export const authOptions: NextAuthOptions = {
       async authorize(creds) {
         const email = (creds?.email ?? "").toString().trim().toLowerCase();
         if (!email) return null;
-        return { id: "dev-" + email, email };
+        // ensure user exists in DB so you can store roles there
+        const user = await prisma.user.upsert({
+          where: { email },
+          update: {},
+          create: { email }, // role defaults to PATIENT per your schema
+        });
+        return { id: user.id, email: user.email } as any;
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
+      // on sign-in, ensure email on token
       if (user?.email) token.email = user.email.toLowerCase();
-      const em = (token.email as string) || "";
-      (token as any).role = A.includes(em) ? "ADMIN" : P.includes(em) ? "PROVIDER" : "PATIENT";
+      // fetch role from DB
+      if (token.email) {
+        const u = await prisma.user.findUnique({ where: { email: token.email as string } });
+        (token as any).role = u?.role ?? "PATIENT";
+      }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.email = token.email as string;
+        session.user.email = (token.email as string) || session.user.email;
         (session.user as any).role = (token as any).role || "PATIENT";
       }
       return session;
